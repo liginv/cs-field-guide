@@ -141,7 +141,11 @@ class Section:
 
         link_text = match.group('link_text')
         if not link_text.startswith(external_link_prefixes):
-            link_text = self.parse_markdown(link_text, 'p').strip()
+            text_prefix = ''
+            while link_text[0] == '#':
+                text_prefix += '#'
+                link_text = link_text[1:]
+            link_text = text_prefix + self.parse_markdown(link_text, 'p').strip()
 
         link_url = match.group('link_url')
         link_url = link_url.replace('\)', ')')
@@ -174,18 +178,22 @@ class Section:
                 summary_value = parse_argument('summary', arguments)
                 summary = ': ' + summary_value.strip() if summary_value else ''
                 expanded_value = parse_argument('expanded', arguments)
-                expanded = ' active' if expanded_value == 'True' else ''
-                content = self.parse_markdown(match.group('content'))
-
-                heading = self.html_templates['panel_heading'].format(title=title,
-                                                                      summary=summary)
-                html = self.html_templates['panel'].format(panel_heading = heading,
-                                                           content = content,
-                                                           type_class = 'panel-' + panel_type,
-                                                           expanded = expanded)
+                collapsible = False if expanded_value == 'Always' else True
+                valid_expanded_values = ['True', 'Always']
+                expanded = expanded_value in valid_expanded_values
+                context = {
+                    'type_class': panel_type,
+                    'title': title,
+                    'summary': summary,
+                    'content': self.parse_markdown(match.group('content')),
+                    'expanded': expanded,
+                    'collapsible': collapsible
+                }
+                html = self.guide.html_generator.render_template('panel', context)
             # Panel should be ignored
             else:
                 html = ''
+
             # Check for tags within panel that could cause dead links within student version
             if panel_type in teacher_only_panels:
                 content = match.group('content')
@@ -679,7 +687,7 @@ class Section:
             - Implement better system for checking whether link is relative
             and needs to be adjusted
         """
-        link_attributes = ['href', 'src']
+        link_attributes = ['href', 'src', 'data']
         for element in root.find_all():
             for attr in link_attributes:
                 raw_link = element.get(attr, None)
@@ -967,7 +975,7 @@ class HeadingNode:
             return '{}{}'.format('--' * (self.level - 1), self.heading)
 
     def to_html(self):
-        if self.section.file_node.group_type == "chapters":
+        if self.section.file_node.content_type == "chapters":
             html_type = 'heading-numbered'
         else:
             html_type = 'heading-unnumbered'
@@ -976,7 +984,7 @@ class HeadingNode:
 
         if self.guide.output_type == WEB:
             # Create section starts for Materialize ScrollSpy
-            if self.level == 2 and self.section.file_node.settings['table_of_contents_sidebar']:
+            if self.level == 2 and self.section.file_node.type_settings['table_of_contents_sidebar']:
                 # Close previous section if needed
                 if self.section.sectioned:
                     html = self.section.html_templates['section-end']
